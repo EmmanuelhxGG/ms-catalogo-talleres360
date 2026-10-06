@@ -4,9 +4,9 @@ Servicio Spring Boot independiente (puerto 8082, base `catalog_db`). Es dueño d
 
 ## Ejecutar
 
-En el stack completo: `docker compose -f infra/apps/compose.yml up -d --build` desde la raíz de `talleres360-backend`. En la EC2 backend: `docker compose -f infra/ms/compose.yml up -d --build`. Ambos crean PostgreSQL y volumen **propios del catálogo**. Configura `INTERNAL_API_KEY` en el `.env` de ese Compose y la misma clave en el BFF.
+Este repositorio tiene su propio `compose.yml`: copia `.env.example` a `.env`, completa la contraseña de base de datos y la clave interna, y ejecuta `docker compose up -d --build`. Levanta solo Catálogo y su PostgreSQL persistente. Consulta [DESPLIEGUE_EC2.md](DESPLIEGUE_EC2.md) para configurar su EC2 independiente y las conexiones con Órdenes y BFF.
 
-Para desarrollo aislado, arranca con Java 17 y Maven (`mvn spring-boot:run` desde esta carpeta); usa H2 en memoria por defecto y también requiere `INTERNAL_API_KEY`. Este módulo no tiene wrapper propio: si no tienes Maven global, desde su carpeta usa `../ms-talleres360-orders/mvnw -f pom.xml spring-boot:run` (Windows: `..\ms-talleres360-orders\mvnw.cmd -f pom.xml spring-boot:run`). El Dockerfile compila el proyecto sin depender del wrapper de orders. Ejecuta las pruebas sustituyendo `spring-boot:run` por `test`.
+Para desarrollo aislado usa Java 17 y Maven instalado (`mvn spring-boot:run`); por defecto usa H2 en memoria y requiere `INTERNAL_API_KEY`. Este repositorio no incluye Maven Wrapper. El Dockerfile incluye Maven para compilar sin depender de otros repositorios. Con Maven instalado, ejecuta `mvn test` para las pruebas.
 
 ## API interna
 
