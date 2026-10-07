@@ -1,24 +1,150 @@
-# ms-talleres360-catalog
+# Microservicio de Catálogo de Talleres360
 
-Servicio Spring Boot independiente (puerto 8082, base `catalog_db`). Es dueño de productos, precios, existencias y movimientos de consumo. Orders ya no guarda productos propios; consulta este servicio para valorar repuestos y comprobar stock.
+Servicio independiente de productos, precios y existencias. Java 17, Spring Boot 3.5.6, JPA, validación y Lombok. Puerto **8082**; PostgreSQL **catalog_db** en Compose y H2 en desarrollo. Rama **`backend-emmanuel`**. [Repositorio](https://github.com/EmmanuelhxGG/ms-catalogo-talleres360). Estado documentado al 6 de octubre de 2026.
 
-## Ejecutar
+## Responsabilidad
 
-Este repositorio tiene su propio `compose.yml`: copia `.env.example` a `.env`, completa la contraseña de base de datos y la clave interna, y ejecuta `docker compose up -d --build`. Levanta solo Catálogo y su PostgreSQL persistente. Consulta [DESPLIEGUE_EC2.md](DESPLIEGUE_EC2.md) para configurar su EC2 independiente y las conexiones con Órdenes y BFF.
+BFF consume productos para Operador/Admin; Órdenes consulta precio/stock y envía asignaciones de repuestos. El navegador no llama a este servicio directamente. Catálogo es dueño del precio y del stock, que es compartido por producto, no separado por taller.
 
-Para desarrollo aislado usa Java 17 y Maven instalado (`mvn spring-boot:run`); por defecto usa H2 en memoria y requiere `INTERNAL_API_KEY`. Este repositorio no incluye Maven Wrapper. El Dockerfile incluye Maven para compilar sin depender de otros repositorios. Con Maven instalado, ejecuta `mvn test` para las pruebas.
+Todas las rutas requieren `X-Internal-Key` coincidente con la configuración del servidor. El BFF permite lectura a Operador/Admin y escritura solo a Admin.
 
-## API interna
+## Estructura
 
-Todas las llamadas requieren `X-Internal-Key`; en uso normal las realiza el BFF o orders, no el navegador.
+Las rutas Java parten de `src/main/java/com/talleres360/catalog/`.
 
-| Método y ruta | Uso |
+| Ruta | Contenido |
 | --- | --- |
-| `GET /api/products`, `GET /api/products/{id}` | Listar y consultar. Operador/Admin vía BFF. |
-| `POST /api/products` | Crear. Solo Admin vía BFF. |
-| `PUT /api/products/{id}` | Nombre, SKU, precio, stock y activo. Solo Admin vía BFF. |
-| `POST /internal/stock-consumptions` | Descontar al entregar, desde el outbox de orders. |
+| `controller/ProductController.java` | Productos y endpoints internos de stock; valida clave. |
+| `service/CatalogService.java` | Reglas de catálogo, DTO de entrada/salida y asignación transaccional. |
+| `model/Product.java` | SKU, nombre, precio, stock libre, activo y versión JPA. |
+| `model/ReservaStock.java` | Última revisión y cantidades asignadas a una orden. |
+| `model/StockConsumption.java` | Marcador idempotente del protocolo anterior. |
+| `repository/` | Productos, reservas, consumos y bloqueos de escritura. |
+| `src/main/resources/application.yml` | Puerto, clave y perfiles local/postgres. |
+| `src/test/` | Pruebas de API, stock, concurrencia y rollback. |
+| `compose.yml`, `Dockerfile`, `.env.example` | Construcción y despliegue independientes. |
 
-Producto: `{ "sku": "FILTRO-001", "name": "Filtro", "price": 12000, "stock": 5, "active": true }`. SKU único; precio y stock no negativos. El consumo acepta `{ "eventId": "<UUID>", "orderId": 1, "items": [{"productId": 1, "quantity": 2}] }`; repetir `eventId` no vuelve a descontar. La transacción bloquea los productos y rechaza stock insuficiente.
+## API
 
-**Pendiente para producción:** hoy el Admin puede ajustar stock mediante actualización del producto, sin historial de cada ajuste. Hay que añadir un libro de movimientos para entradas/correcciones con motivo, usuario y fecha. La consulta de stock al editar una orden no lo reserva; otra operación puede agotarlo antes de entregar. La entrega de órdenes y el descuento no son atómicos entre servicios; consulta el README raíz. El catálogo anterior almacenado en la base de orders no se importa automáticamente.
+| Método/ruta | Función |
+| --- | --- |
+| `GET /api/products` | Catálogo ordenado por nombre, incluyendo actividad y disponibilidad. |
+| `GET /api/products/{id}` | Producto por ID. |
+| `POST /api/products` | Crear; 201. |
+| `PUT /api/products/{id}` | Actualizar datos, precio, stock libre y actividad. |
+| `PUT /internal/stock-reservations` | Aplicar asignación completa por orden/revisión; 204. |
+| `GET /internal/stock-reservations/{orderId}` | Revisión confirmada y cantidades; orden sin asignación devuelve revisión 0 y mapa vacío. |
+| `POST /internal/stock-consumptions` | Consumo idempotente de entregas emitidas por la versión anterior; 204. |
+
+La creación/edición recibe:
+
+```json
+{
+  "sku": "FILTRO-001",
+  "name": "Filtro de aceite",
+  "price": 12000,
+  "stock": 5,
+  "active": true
+}
+```
+
+La respuesta incluye `id`, `sku`, `name`, `price`, `stock`, `active` y `available`. Disponibilidad significa activo y stock libre mayor que cero. SKU se guarda en mayúsculas, sin espacios extremos, y es único. Nombre/SKU son obligatorios, precio no negativo y stock entero no negativo.
+
+La baja es lógica: actualizar `active=false` conserva el producto y sus referencias. Un repuesto ya asignado puede mantenerse/devolverse aunque se desactive; no puede aumentarse su asignación.
+
+## Qué significa stock
+
+`stock` representa **unidades libres**. Las cantidades asignadas a órdenes aceptadas se guardan aparte en `reservas_stock` y `reserva_stock_items`.
+
+Ejemplo: producto con 10 unidades libres; aceptar una orden con 2 deja 8. Editarla a 5 descuenta 3 más y deja 5. Reducirla a 1 devuelve 4 y deja 9. Cancelarla libera la unidad restante y deja 10. Entregar no descuenta otra vez.
+
+Eliminar una orden ya entregada no devuelve repuestos consumidos. Las cantidades históricas de la orden entregada se conservan en la asignación registrada.
+
+## Contrato de asignación versionada
+
+```json
+{
+  "orderId": 101,
+  "revision": 1,
+  "items": [
+    { "productId": 1, "quantity": 2 }
+  ]
+}
+```
+
+La lista es la **asignación completa deseada**, no un incremento. Para liberar se envía una revisión superior con `items: []`.
+
+- La revisión aumenta por orden desde Órdenes.
+- Revisiones iguales o anteriores se ignoran; un reintento no vuelve a descontar.
+- Una cancelación con revisión superior protege frente a eventos antiguos.
+- Los productos repetidos se suman.
+- Se bloquea la reserva y los productos en orden de ID.
+- Todas las diferencias se aplican juntas o se revierte toda la transacción.
+- Aumentar requiere producto activo y suficiente stock libre.
+- IDs/cantidades positivos; hasta 200 líneas y 1.000.000 unidades por línea.
+
+La confirmación de stock forma parte del outbox asíncrono de Órdenes. Si Catálogo no confirma, Órdenes rechaza la entrega hasta confirmar su revisión requerida. Una corrección posterior puede sustituir una asignación que no pudo aplicarse.
+
+El protocolo anterior recibe `eventId`, `orderId` e `items`: repetir el mismo evento no duplica consumo. Se conserva para procesar entregas antiguas, no para descontar nuevas entregas.
+
+## Configurar .env
+
+Crea `.env` junto a `compose.yml`:
+
+```dotenv
+DB_USERNAME=talleres360
+DB_PASSWORD=<CONTRASENA_DE_ESTA_BASE>
+INTERNAL_API_KEY=<CLAVE_COMPARTIDA_CON_BFF_Y_MICROS>
+```
+
+No necesita IDs de Azure ni URL del frontend. Compose configura `SERVER_PORT=8082`, perfil postgres y `jdbc:postgresql://postgres:5432/catalog_db`. `.env` lo carga Compose; Java directo necesita variables exportadas.
+
+Órdenes y BFF deben configurar `CATALOG_URL=http://<IP_PRIVADA_DE_ESTA_EC2>:8082`, sin `/api` ni `/dev`.
+
+## Construir y ejecutar
+
+Requiere Git, Docker Engine, Buildx y Compose en EC2. El Dockerfile utiliza Maven y Java 17 para construir y JRE 17 con usuario no root para ejecutar; no necesita otro repositorio ni Maven en el host.
+
+```bash
+docker buildx version
+docker compose version
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=100 catalogo
+```
+
+El Compose levanta Catálogo y su PostgreSQL, con volumen `datos_postgres`, comprobación de salud de la base y reinicio `unless-stopped`. Publica 8082, no PostgreSQL.
+
+Para desarrollo aislado, con JDK 17/Maven y `INTERNAL_API_KEY` exportada:
+
+```bash
+mvn spring-boot:run
+```
+
+Este repositorio no incluye Maven Wrapper. El perfil local usa H2 en memoria; detener el proceso descarta sus datos.
+
+## EC2, actualización y datos
+
+[Guía de despliegue independiente](DESPLIEGUE_EC2.md). Permitir 8082 solo desde los grupos BFF y Órdenes. Si cambia la IP privada, actualizar `CATALOG_URL` en ambos y recrearlos.
+
+Con rama verificada, cambios publicados y sin conflictos locales:
+
+```bash
+git pull --ff-only origin backend-emmanuel
+docker compose up -d --build
+```
+
+Para la versión de asignaciones actualizar Catálogo antes de Órdenes/frontend. JPA usa `ddl-auto=update` para crear/actualizar tablas. Conservar las reservas vacías: su revisión identifica movimientos ya superados. No reutilizar IDs de órdenes con reservas existentes. Restaurar las bases de Órdenes y Catálogo de forma coherente.
+
+Editar un producto establece su stock libre absoluto y bloquea su fila; la versión JPA es interna. El cambio debe realizarse sobre datos actuales. Recrear contenedores conserva el volumen; **`docker compose down -v` lo elimina**. No se importa automáticamente un catálogo guardado en otro repositorio/base.
+
+## Verificación
+
+```bash
+mvn test
+```
+
+El 6 de octubre pasaron **6 pruebas locales**: clave interna, consumo idempotente anterior, asignaciones repetidas/desordenadas, cambios/cancelación, rollback de varios productos, duplicados y dos aceptaciones simultáneas sobre el último repuesto. Se usó H2, no EC2.
+
+401 indica clave incorrecta; 404 producto inexistente; 409 SKU duplicado o existencias insuficientes. No publicar `.env`, claves o tokens. `target/` es salida compilada, no código fuente para publicar.
