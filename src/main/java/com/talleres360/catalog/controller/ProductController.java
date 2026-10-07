@@ -38,4 +38,14 @@ public class ProductController {
     public void consume(@RequestHeader(value = "X-Internal-Key", required = false) String key, @Valid @RequestBody ConsumptionRequest input) {
         check(key); service.consume(input);
     }
+    @GetMapping("/internal/stock-reservations/{orderId}")
+    public ReservaView reserva(@RequestHeader(value = "X-Internal-Key", required = false) String key,
+                               @PathVariable @jakarta.validation.constraints.Positive Long orderId) {
+        check(key); return service.reserva(orderId);
+    }
+    @PutMapping("/internal/stock-reservations") @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void reservar(@RequestHeader(value = "X-Internal-Key", required = false) String key,
+                         @Valid @RequestBody SolicitudReserva input) {
+        check(key); service.sincronizarReserva(input);
+    }
 }

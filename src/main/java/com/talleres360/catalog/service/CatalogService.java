@@ -2,8 +2,10 @@ package com.talleres360.catalog.service;
 
 import com.talleres360.catalog.model.Product;
 import com.talleres360.catalog.model.StockConsumption;
+import com.talleres360.catalog.model.ReservaStock;
 import com.talleres360.catalog.repository.ProductRepository;
 import com.talleres360.catalog.repository.StockConsumptionRepository;
+import com.talleres360.catalog.repository.ReservaStockRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.RequiredArgsConstructor;
@@ -14,11 +16,15 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.TreeSet;
 
 @Service @RequiredArgsConstructor
 public class CatalogService {
     private final ProductRepository products;
     private final StockConsumptionRepository consumptions;
+    private final ReservaStockRepository reservas;
 
     public record ProductInput(
             @NotBlank @Size(max = 60) String sku,
@@ -31,9 +37,45 @@ public class CatalogService {
             return new ProductView(p.getId(), p.getSku(), p.getName(), p.getPrice(), p.getStock(), p.isActive(), p.isActive() && p.getStock() > 0);
         }
     }
-    public record StockItem(@NotNull @Positive Long productId, @NotNull @Positive Integer quantity) {}
+    public record StockItem(@NotNull @Positive Long productId, @NotNull @Positive @Max(1000000) Integer quantity) {}
     public record ConsumptionRequest(@NotBlank String eventId, @NotNull @Positive Long orderId,
-                                     @NotNull List<@Valid StockItem> items) {}
+                                     @NotNull @Size(max = 200) List<@NotNull @Valid StockItem> items) {}
+    public record SolicitudReserva(@NotNull @Positive Long orderId, @Positive long revision,
+                                   @NotNull @Size(max = 200) List<@NotNull @Valid StockItem> items) {}
+    public record ReservaView(long revision, Map<Long, Integer> quantities) {}
+
+    @Transactional(readOnly = true)
+    public ReservaView reserva(Long ordenId) {
+        return reservas.findById(ordenId)
+                .map(r -> new ReservaView(r.getRevision(), Map.copyOf(r.getCantidades())))
+                .orElseGet(() -> new ReservaView(0, Map.of()));
+    }
+
+    @Transactional
+    public void sincronizarReserva(SolicitudReserva input) {
+        var reserva = reservas.bloquear(input.orderId()).orElseGet(() -> {
+            var nueva = new ReservaStock();
+            nueva.setOrdenId(input.orderId());
+            // Si dos primeras asignaciones compiten, una inserción falla y el outbox la reintenta.
+            return reservas.saveAndFlush(nueva);
+        });
+        if (input.revision() <= reserva.getRevision()) return;
+        var deseadas = new HashMap<Long, Integer>();
+        for (StockItem item : input.items()) deseadas.merge(item.productId(), item.quantity(), Math::addExact);
+        var ids = new TreeSet<>(reserva.getCantidades().keySet());
+        ids.addAll(deseadas.keySet());
+        for (Long id : ids) {
+            Product p = products.findWithLockById(id)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Producto no encontrado"));
+            int diferencia = deseadas.getOrDefault(id, 0) - reserva.getCantidades().getOrDefault(id, 0);
+            if (diferencia > 0 && (!p.isActive() || p.getStock() < diferencia))
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Stock insuficiente: " + p.getName());
+            p.setStock(Math.subtractExact(p.getStock(), diferencia));
+        }
+        reserva.getCantidades().clear();
+        reserva.getCantidades().putAll(deseadas);
+        reserva.setRevision(input.revision());
+    }
 
     @Transactional(readOnly = true)
     public List<ProductView> list() {
@@ -52,7 +94,8 @@ public class CatalogService {
     }
     @Transactional
     public ProductView update(Long id, ProductInput input) {
-        Product p = find(id);
+        Product p = products.findWithLockById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Producto no encontrado"));
         products.findBySkuIgnoreCase(input.sku().trim()).ifPresent(existing -> {
             if (!existing.getId().equals(id))
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "El SKU ya existe");
@@ -63,8 +106,8 @@ public class CatalogService {
     @Transactional
     public void consume(ConsumptionRequest request) {
         if (consumptions.existsById(request.eventId())) return;
-        var grouped = request.items().stream().collect(java.util.stream.Collectors.groupingBy(
-                StockItem::productId, java.util.stream.Collectors.summingInt(StockItem::quantity)));
+        var grouped = new HashMap<Long, Integer>();
+        for (StockItem item : request.items()) grouped.merge(item.productId(), item.quantity(), Math::addExact);
         for (var entry : grouped.entrySet().stream().sorted(Comparator.comparingLong(java.util.Map.Entry::getKey)).toList()) {
             Product p = products.findWithLockById(entry.getKey())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Producto no encontrado"));
