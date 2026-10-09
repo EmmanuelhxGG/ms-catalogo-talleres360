@@ -21,7 +21,6 @@ Las rutas Java parten de `src/main/java/com/talleres360/catalog/`.
 | `model/StockConsumption.java` | Marcador idempotente del protocolo anterior. |
 | `repository/` | Productos, reservas, consumos y bloqueos de escritura. |
 | `src/main/resources/application.yml` | Puerto, clave y perfiles local/postgres. |
-| `src/test/` | Pruebas de API, stock, concurrencia y rollback. |
 | `compose.yml`, `Dockerfile`, `.env.example` | Construcción y despliegue independientes. |
 
 ## API
@@ -142,9 +141,9 @@ Editar un producto establece su stock libre absoluto y bloquea su fila; la versi
 ## Verificación
 
 ```bash
-mvn test
+mvn -DskipTests package
 ```
 
-El 6 de octubre pasaron **6 pruebas locales**: clave interna, consumo idempotente anterior, asignaciones repetidas/desordenadas, cambios/cancelación, rollback de varios productos, duplicados y dos aceptaciones simultáneas sobre el último repuesto. Se usó H2, no EC2.
+La revisión local del 8 de octubre verificó clave interna, stock, concurrencia, rollback e idempotencia con H2, no EC2. Los archivos de pruebas no forman parte de esta versión. El comando anterior comprueba empaquetado, no el funcionamiento del despliegue.
 
 401 indica clave incorrecta; 404 producto inexistente; 409 SKU duplicado o existencias insuficientes. No publicar `.env`, claves o tokens. `target/` es salida compilada, no código fuente para publicar.
