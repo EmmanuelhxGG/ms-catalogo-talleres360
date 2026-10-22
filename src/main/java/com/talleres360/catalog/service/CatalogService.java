@@ -25,16 +25,19 @@ public class CatalogService {
     private final ProductRepository products;
     private final StockConsumptionRepository consumptions;
     private final ReservaStockRepository reservas;
+    private final com.talleres360.catalog.repository.CategoriaRepository categorias;
 
     public record ProductInput(
             @NotBlank @Size(max = 60) String sku,
             @NotBlank @Size(max = 160) String name,
             @NotNull @DecimalMin("0.0") BigDecimal price,
             @Min(0) int stock,
-            boolean active) {}
-    public record ProductView(Long id, String sku, String name, BigDecimal price, int stock, boolean active, boolean available) {
+            boolean active, @Positive Long categoriaId) {}
+    public record ProductView(Long id, String sku, String name, BigDecimal price, int stock, boolean active, boolean available, Long categoriaId, String categoriaNombre) {
         public static ProductView from(Product p) {
-            return new ProductView(p.getId(), p.getSku(), p.getName(), p.getPrice(), p.getStock(), p.isActive(), p.isActive() && p.getStock() > 0);
+            boolean activa = p.isActive() && (p.getCategoria() == null || p.getCategoria().isActiva());
+            return new ProductView(p.getId(), p.getSku(), p.getName(), p.getPrice(), p.getStock(), activa, activa && p.getStock() > 0,
+                p.getCategoria() == null ? null : p.getCategoria().getId(), p.getCategoria() == null ? "General" : p.getCategoria().getNombre());
         }
     }
     public record StockItem(@NotNull @Positive Long productId, @NotNull @Positive @Max(1000000) Integer quantity) {}
@@ -68,7 +71,7 @@ public class CatalogService {
             Product p = products.findWithLockById(id)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Producto no encontrado"));
             int diferencia = deseadas.getOrDefault(id, 0) - reserva.getCantidades().getOrDefault(id, 0);
-            if (diferencia > 0 && (!p.isActive() || p.getStock() < diferencia))
+            if (diferencia > 0 && (!ProductView.from(p).active() || p.getStock() < diferencia))
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Stock insuficiente: " + p.getName());
             p.setStock(Math.subtractExact(p.getStock(), diferencia));
         }
@@ -103,6 +106,7 @@ public class CatalogService {
         apply(p, input);
         return ProductView.from(products.save(p));
     }
+    @Transactional public void eliminar(Long id) { find(id).setActive(false); }
     @Transactional
     public void consume(ConsumptionRequest request) {
         if (consumptions.existsById(request.eventId())) return;
@@ -129,5 +133,8 @@ public class CatalogService {
         p.setPrice(input.price());
         p.setStock(input.stock());
         p.setActive(input.active());
+        p.setCategoria(input.categoriaId() == null ? null : categorias.findById(input.categoriaId())
+            .filter(com.talleres360.catalog.model.Categoria::isActiva)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Categoría no disponible")));
     }
 }

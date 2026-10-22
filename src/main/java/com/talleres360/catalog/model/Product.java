@@ -16,4 +16,5 @@ public class Product {
     @Column(nullable = false) private int stock;
     @Column(nullable = false) private boolean active = true;
     @Version private long version;
+    @ManyToOne @JoinColumn(name = "categoria_id") private Categoria categoria;
 }

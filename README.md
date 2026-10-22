@@ -4,9 +4,22 @@ Servicio independiente de productos, precios y existencias. Java 17, Spring Boot
 
 ## Responsabilidad
 
-BFF consume productos para Operador/Admin; Órdenes consulta precio/stock y envía asignaciones de repuestos. El navegador no llama a este servicio directamente. Catálogo es dueño del precio y del stock, que es compartido por producto, no separado por taller.
+BFF ofrece lectura de productos/categorías a Cliente, Operador y Admin; Órdenes consulta precio/stock y envía asignaciones de repuestos. El navegador no llama a este servicio directamente. Catálogo es dueño del precio y del stock, que es compartido por producto, no separado por taller.
 
-Todas las rutas requieren `X-Internal-Key` coincidente con la configuración del servidor. El BFF permite lectura a Operador/Admin y escritura solo a Admin.
+Todas las rutas requieren `X-Internal-Key` coincidente con la configuración del servidor. El BFF permite lectura a Cliente/Operador/Admin y escritura solo a Admin.
+
+## Categorías y compras
+
+`GET/POST /api/categorias` y `PUT/DELETE /api/categorias/{id}` permiten consultar,
+crear, editar y dar de baja categorías. Los productos incluyen `categoriaId` y
+`categoriaNombre`. Dar de baja una categoría impide nuevas reservas de sus productos.
+`DELETE /api/products/{id}` desactiva el producto sin borrar el historial.
+
+Enviar una solicitud de compra no modifica stock. Órdenes solicita la asignación
+solo al aceptar; las revisiones idempotentes y los bloqueos transaccionales evitan
+descontar dos veces y rechazan cantidades superiores a las existencias. No se confía
+en precios del navegador. La orden solo se acepta definitivamente tras confirmar
+esta asignación; si el servicio cae se conserva pendiente y se reintenta.
 
 ## Estructura
 

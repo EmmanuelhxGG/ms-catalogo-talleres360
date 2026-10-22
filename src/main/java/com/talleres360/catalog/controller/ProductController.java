@@ -15,6 +15,7 @@ import java.util.List;
 @RestController @RequiredArgsConstructor
 public class ProductController {
     private final CatalogService service;
+    private final com.talleres360.catalog.service.CategoriaService categorias;
     @Value("${app.internal-key}") private String internalKey;
 
     private void check(String candidate) {
@@ -34,6 +35,20 @@ public class ProductController {
     public ProductView update(@RequestHeader(value = "X-Internal-Key", required = false) String key, @PathVariable Long id, @Valid @RequestBody ProductInput input) {
         check(key); return service.update(id, input);
     }
+    @DeleteMapping("/api/products/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void eliminar(@RequestHeader(value="X-Internal-Key", required=false) String key, @PathVariable Long id) {
+        check(key); service.eliminar(id);
+    }
+    @GetMapping("/api/categorias") public Object categorias(@RequestHeader(value="X-Internal-Key", required=false) String key) {
+        check(key); return categorias.listar();
+    }
+    @PostMapping("/api/categorias") @ResponseStatus(HttpStatus.CREATED)
+    public Object crearCategoria(@RequestHeader(value="X-Internal-Key", required=false) String key,
+        @Valid @RequestBody com.talleres360.catalog.service.CategoriaService.Entrada e) { check(key); return categorias.guardar(null,e); }
+    @PutMapping("/api/categorias/{id}") public Object editarCategoria(@RequestHeader(value="X-Internal-Key", required=false) String key,
+        @PathVariable Long id, @Valid @RequestBody com.talleres360.catalog.service.CategoriaService.Entrada e) { check(key); return categorias.guardar(id,e); }
+    @DeleteMapping("/api/categorias/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void eliminarCategoria(@RequestHeader(value="X-Internal-Key", required=false) String key, @PathVariable Long id) { check(key); categorias.eliminar(id); }
     @PostMapping("/internal/stock-consumptions") @ResponseStatus(HttpStatus.NO_CONTENT)
     public void consume(@RequestHeader(value = "X-Internal-Key", required = false) String key, @Valid @RequestBody ConsumptionRequest input) {
         check(key); service.consume(input);
