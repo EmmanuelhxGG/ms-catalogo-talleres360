@@ -23,32 +23,57 @@ public class ProductController {
                 !MessageDigest.isEqual(internalKey.getBytes(StandardCharsets.UTF_8), candidate.getBytes(StandardCharsets.UTF_8)))
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Credencial interna inválida");
     }
+    private void admin(String key, String role) {
+        check(key);
+        if (!"Admin".equals(role)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Operación reservada al administrador");
+    }
+    @GetMapping("/api/catalogo")
+    public List<CatalogoView> catalogo(@RequestHeader(value = "X-Internal-Key", required = false) String key) {
+        check(key); return service.catalogo();
+    }
+    @GetMapping("/internal/products/{id}")
+    public ProductView interno(@RequestHeader(value = "X-Internal-Key", required = false) String key, @PathVariable Long id) {
+        check(key); return service.get(id);
+    }
     @GetMapping("/api/products")
-    public List<ProductView> list(@RequestHeader(value = "X-Internal-Key", required = false) String key) { check(key); return service.list(); }
+    public List<ProductView> list(@RequestHeader(value = "X-Internal-Key", required = false) String key,
+        @RequestHeader(value = "X-Actor-Role", required = false) String role) { admin(key, role); return service.list(); }
     @GetMapping("/api/products/{id}")
-    public ProductView get(@RequestHeader(value = "X-Internal-Key", required = false) String key, @PathVariable Long id) { check(key); return service.get(id); }
+    public ProductView get(@RequestHeader(value = "X-Internal-Key", required = false) String key,
+        @RequestHeader(value = "X-Actor-Role", required = false) String role, @PathVariable Long id) { admin(key, role); return service.get(id); }
+    @PostMapping("/api/products/carga-inicial")
+    public Object inicial(@RequestHeader(value = "X-Internal-Key", required = false) String key,
+        @RequestHeader(value = "X-Actor-Role", required = false) String role) {
+        admin(key, role); return java.util.Map.of("agregados", service.cargarRepuestosEjemplo());
+    }
     @PostMapping("/api/products") @ResponseStatus(HttpStatus.CREATED)
-    public ProductView create(@RequestHeader(value = "X-Internal-Key", required = false) String key, @Valid @RequestBody ProductInput input) {
-        check(key); return service.create(input);
+    public ProductView create(@RequestHeader(value = "X-Internal-Key", required = false) String key,
+        @RequestHeader(value = "X-Actor-Role", required = false) String role, @Valid @RequestBody ProductInput input) {
+        admin(key, role); return service.create(input);
     }
     @PutMapping("/api/products/{id}")
-    public ProductView update(@RequestHeader(value = "X-Internal-Key", required = false) String key, @PathVariable Long id, @Valid @RequestBody ProductInput input) {
-        check(key); return service.update(id, input);
+    public ProductView update(@RequestHeader(value = "X-Internal-Key", required = false) String key,
+        @RequestHeader(value = "X-Actor-Role", required = false) String role, @PathVariable Long id, @Valid @RequestBody ProductInput input) {
+        admin(key, role); return service.update(id, input);
     }
     @DeleteMapping("/api/products/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void eliminar(@RequestHeader(value="X-Internal-Key", required=false) String key, @PathVariable Long id) {
-        check(key); service.eliminar(id);
+    public void eliminar(@RequestHeader(value="X-Internal-Key", required=false) String key,
+        @RequestHeader(value = "X-Actor-Role", required = false) String role, @PathVariable Long id) {
+        admin(key, role); service.eliminar(id);
     }
     @GetMapping("/api/categorias") public Object categorias(@RequestHeader(value="X-Internal-Key", required=false) String key) {
         check(key); return categorias.listar();
     }
     @PostMapping("/api/categorias") @ResponseStatus(HttpStatus.CREATED)
     public Object crearCategoria(@RequestHeader(value="X-Internal-Key", required=false) String key,
-        @Valid @RequestBody com.talleres360.catalog.service.CategoriaService.Entrada e) { check(key); return categorias.guardar(null,e); }
+        @RequestHeader(value = "X-Actor-Role", required = false) String role,
+        @Valid @RequestBody com.talleres360.catalog.service.CategoriaService.Entrada e) { admin(key, role); return categorias.guardar(null,e); }
     @PutMapping("/api/categorias/{id}") public Object editarCategoria(@RequestHeader(value="X-Internal-Key", required=false) String key,
-        @PathVariable Long id, @Valid @RequestBody com.talleres360.catalog.service.CategoriaService.Entrada e) { check(key); return categorias.guardar(id,e); }
+        @RequestHeader(value = "X-Actor-Role", required = false) String role,
+        @PathVariable Long id, @Valid @RequestBody com.talleres360.catalog.service.CategoriaService.Entrada e) { admin(key, role); return categorias.guardar(id,e); }
     @DeleteMapping("/api/categorias/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void eliminarCategoria(@RequestHeader(value="X-Internal-Key", required=false) String key, @PathVariable Long id) { check(key); categorias.eliminar(id); }
+    public void eliminarCategoria(@RequestHeader(value="X-Internal-Key", required=false) String key,
+        @RequestHeader(value = "X-Actor-Role", required = false) String role, @PathVariable Long id) { admin(key, role); categorias.eliminar(id); }
     @PostMapping("/internal/stock-consumptions") @ResponseStatus(HttpStatus.NO_CONTENT)
     public void consume(@RequestHeader(value = "X-Internal-Key", required = false) String key, @Valid @RequestBody ConsumptionRequest input) {
         check(key); service.consume(input);

@@ -1,12 +1,23 @@
 # Microservicio de Catálogo de Talleres360
 
-Servicio independiente de productos, precios y existencias. Java 17, Spring Boot 3.5.6, JPA, validación y Lombok. Puerto **8082**; PostgreSQL **catalog_db** en Compose y H2 en desarrollo. Rama **`backend-emmanuel`**. [Repositorio](https://github.com/EmmanuelhxGG/ms-catalogo-talleres360). Estado documentado al 6 de octubre de 2026.
+Servicio independiente de productos, categorías, precios y existencias de un único taller: Talleres360. Java 17, Spring Boot 3.5.6, JPA, validación y Lombok. Puerto **8082**; PostgreSQL **catalog_db** en Compose y H2 en desarrollo. Rama **`backend-emmanuel`**. [Repositorio](https://github.com/EmmanuelhxGG/ms-catalogo-talleres360). Documentación actualizada el **22 de octubre de 2026**.
 
 ## Responsabilidad
 
-BFF ofrece lectura de productos/categorías a Cliente, Operador y Admin; Órdenes consulta precio/stock y envía asignaciones de repuestos. El navegador no llama a este servicio directamente. Catálogo es dueño del precio y del stock, que es compartido por producto, no separado por taller.
+`GET /api/catalogo` entrega precio de venta y disponibilidad, pero no el campo
+`stock`. El inventario completo de `/api/products` y las escrituras exigen la clave
+interna y el rol Admin. Órdenes consulta productos mediante `/internal/products/{id}`,
+una ruta interna no publicada por el BFF. El stock no se oculta únicamente con CSS:
+se excluye del contrato de venta.
 
-Todas las rutas requieren `X-Internal-Key` coincidente con la configuración del servidor. El BFF permite lectura a Cliente/Operador/Admin y escritura solo a Admin.
+Admin puede ejecutar `POST /api/products/carga-inicial` para agregar ocho repuestos
+de ejemplo con SKU `DEMO-*`, precios y existencias editables. Son datos de
+demostración persistidos, no un inventario real suministrado por el negocio.
+La carga es explícita e idempotente: repetirla no repone stock ni modifica registros.
+
+BFF ofrece lectura de productos/categorías a Cliente, Operador y Admin; Órdenes consulta precio/stock y envía asignaciones de repuestos. El navegador no llama a este servicio directamente. Catálogo es dueño del precio y del stock libre del único taller. No administra regiones, sucursales, pagos o cuentas de Entra.
+
+Todas las rutas requieren `X-Internal-Key` coincidente con la configuración del servidor. El BFF permite catálogo de venta a Cliente/Operador/Admin; inventario completo y escrituras solo a Admin.
 
 ## Categorías y compras
 
@@ -29,6 +40,7 @@ Las rutas Java parten de `src/main/java/com/talleres360/catalog/`.
 | --- | --- |
 | `controller/ProductController.java` | Productos y endpoints internos de stock; valida clave. |
 | `service/CatalogService.java` | Reglas de catálogo, DTO de entrada/salida y asignación transaccional. |
+| `service/CategoriaService.java`, `model/Categoria.java` | CRUD de categorías con nombre único y baja lógica. |
 | `model/Product.java` | SKU, nombre, precio, stock libre, activo y versión JPA. |
 | `model/ReservaStock.java` | Última revisión y cantidades asignadas a una orden. |
 | `model/StockConsumption.java` | Marcador idempotente del protocolo anterior. |
@@ -44,6 +56,11 @@ Las rutas Java parten de `src/main/java/com/talleres360/catalog/`.
 | `GET /api/products/{id}` | Producto por ID. |
 | `POST /api/products` | Crear; 201. |
 | `PUT /api/products/{id}` | Actualizar datos, precio, stock libre y actividad. |
+| `DELETE /api/products/{id}` | Baja lógica; conserva el producto y sus referencias. |
+| `GET /api/categorias` | Listar categorías. |
+| `POST /api/categorias` | Crear categoría; 201. |
+| `PUT /api/categorias/{id}` | Editar nombre, descripción y actividad. |
+| `DELETE /api/categorias/{id}` | Baja lógica de categoría. |
 | `PUT /internal/stock-reservations` | Aplicar asignación completa por orden/revisión; 204. |
 | `GET /internal/stock-reservations/{orderId}` | Revisión confirmada y cantidades; orden sin asignación devuelve revisión 0 y mapa vacío. |
 | `POST /internal/stock-consumptions` | Consumo idempotente de entregas emitidas por la versión anterior; 204. |
@@ -56,11 +73,21 @@ La creación/edición recibe:
   "name": "Filtro de aceite",
   "price": 12000,
   "stock": 5,
-  "active": true
+  "active": true,
+  "categoriaId": null
 }
 ```
 
-La respuesta incluye `id`, `sku`, `name`, `price`, `stock`, `active` y `available`. Disponibilidad significa activo y stock libre mayor que cero. SKU se guarda en mayúsculas, sin espacios extremos, y es único. Nombre/SKU son obligatorios, precio no negativo y stock entero no negativo.
+La respuesta incluye `id`, `sku`, `name`, `price`, `stock`, `active`, `available`,
+`categoriaId` y `categoriaNombre`. Sin categoría se muestra `General`.
+La actividad efectiva requiere producto y categoría activos cuando tiene categoría;
+disponibilidad añade stock libre mayor que cero. SKU se guarda en mayúsculas,
+sin espacios extremos, y es único. Nombre/SKU son obligatorios, precio no negativo
+y stock entero no negativo. `categoriaId` debe identificar una categoría activa.
+
+Una categoría recibe `nombre`, `descripcion` y `activa`; el nombre es obligatorio,
+único sin distinguir mayúsculas y tiene como máximo 80 caracteres. La descripción
+admite hasta 300. Estos datos los administra Admin a través de BFF.
 
 La baja es lógica: actualizar `active=false` conserva el producto y sus referencias. Un repuesto ya asignado puede mantenerse/devolverse aunque se desactive; no puede aumentarse su asignación.
 
@@ -104,12 +131,17 @@ El protocolo anterior recibe `eventId`, `orderId` e `items`: repetir el mismo ev
 Crea `.env` junto a `compose.yml`:
 
 ```dotenv
-DB_USERNAME=talleres360
+DB_USERNAME=<USUARIO_BASE_CATALOGO>
 DB_PASSWORD=<CONTRASENA_DE_ESTA_BASE>
 INTERNAL_API_KEY=<CLAVE_COMPARTIDA_CON_BFF_Y_MICROS>
 ```
 
 No necesita IDs de Azure ni URL del frontend. Compose configura `SERVER_PORT=8082`, perfil postgres y `jdbc:postgresql://postgres:5432/catalog_db`. `.env` lo carga Compose; Java directo necesita variables exportadas.
+
+Completa los marcadores con valores privados, fuera de Git. La contraseña de esta
+base no necesita coincidir con las otras bases; la clave interna sí debe coincidir
+con los emisores autorizados. Este servicio no necesita configuración de SMTP,
+RabbitMQ o Kafka: Órdenes coordina el stock mediante HTTP interno y su outbox.
 
 Órdenes y BFF deben configurar `CATALOG_URL=http://<IP_PRIVADA_DE_ESTA_EC2>:8082`, sin `/api` ni `/dev`.
 
@@ -151,12 +183,24 @@ Para la versión de asignaciones actualizar Catálogo antes de Órdenes/frontend
 
 Editar un producto establece su stock libre absoluto y bloquea su fila; la versión JPA es interna. El cambio debe realizarse sobre datos actuales. Recrear contenedores conserva el volumen; **`docker compose down -v` lo elimina**. No se importa automáticamente un catálogo guardado en otro repositorio/base.
 
+Si la instalación utiliza archivos Compose adicionales, conserva esos mismos
+`-f` al actualizar. No sobrescribas el `.env` existente ni reinicies las secuencias
+de órdenes para ajustar inventario. Desactivar un producto o categoría conserva
+el historial; no sustituye una corrección explícita del stock libre.
+
 ## Verificación
 
 ```bash
 mvn -DskipTests package
 ```
 
-La revisión local del 8 de octubre verificó clave interna, stock, concurrencia, rollback e idempotencia con H2, no EC2. Los archivos de pruebas no forman parte de esta versión. El comando anterior comprueba empaquetado, no el funcionamiento del despliegue.
+El comando comprueba empaquetado, no una solicitud autenticada completa. Para
+verificar una instalación, consulta productos desde BFF, crea una solicitud,
+acepta con Operador y comprueba que el stock disminuya una vez; entregar no debe
+descontarlo otra vez. Usa datos de demostración autorizados. Los archivos de
+pruebas no forman parte de esta versión.
 
 401 indica clave incorrecta; 404 producto inexistente; 409 SKU duplicado o existencias insuficientes. No publicar `.env`, claves o tokens. `target/` es salida compilada, no código fuente para publicar.
+
+Los ejemplos no incluyen IP reales, IDs de cuenta, usuarios privados o credenciales.
+No pegues volcados de base, cabeceras de autenticación o datos de clientes en el README.

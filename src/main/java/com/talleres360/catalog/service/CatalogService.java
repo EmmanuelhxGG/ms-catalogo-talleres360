@@ -41,6 +41,37 @@ public class CatalogService {
         }
     }
     public record StockItem(@NotNull @Positive Long productId, @NotNull @Positive @Max(1000000) Integer quantity) {}
+    /** Vista de venta: no expone existencias exactas ni metadatos internos de inventario. */
+    public record CatalogoView(Long id, String sku, String name, BigDecimal price,
+                              boolean active, boolean available, Long categoriaId, String categoriaNombre) {
+        public static CatalogoView from(ProductView p) {
+            return new CatalogoView(p.id(), p.sku(), p.name(), p.price(), p.active(), p.available(), p.categoriaId(), p.categoriaNombre());
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public List<CatalogoView> catalogo() {
+        return list().stream().filter(ProductView::active).map(CatalogoView::from).toList();
+    }
+
+    /** Carga explícita, idempotente por SKU. Nunca repone ni sobrescribe productos existentes. */
+    @Transactional
+    public int cargarRepuestosEjemplo() {
+        var iniciales = List.of(
+            new ProductInput("DEMO-ACEITE-5W30", "Aceite de motor 5W30 4 L", new BigDecimal("32990"), 20, true, null),
+            new ProductInput("DEMO-FILTRO-ACEITE", "Filtro de aceite", new BigDecimal("7990"), 30, true, null),
+            new ProductInput("DEMO-FILTRO-AIRE", "Filtro de aire", new BigDecimal("11990"), 18, true, null),
+            new ProductInput("DEMO-PASTILLAS", "Juego de pastillas de freno", new BigDecimal("24990"), 12, true, null),
+            new ProductInput("DEMO-BUJIA", "Bujía de encendido", new BigDecimal("4990"), 40, true, null),
+            new ProductInput("DEMO-REFRIGERANTE", "Refrigerante 1 L", new BigDecimal("5990"), 24, true, null),
+            new ProductInput("DEMO-LIMPIAPARABRISAS", "Limpiaparabrisas universal", new BigDecimal("9990"), 16, true, null),
+            new ProductInput("DEMO-LIQUIDO-FRENOS", "Líquido de frenos DOT 4", new BigDecimal("6990"), 15, true, null));
+        int agregados = 0;
+        for (var entrada : iniciales) {
+            if (!products.existsBySkuIgnoreCase(entrada.sku())) { create(entrada); agregados++; }
+        }
+        return agregados;
+    }
     public record ConsumptionRequest(@NotBlank String eventId, @NotNull @Positive Long orderId,
                                      @NotNull @Size(max = 200) List<@NotNull @Valid StockItem> items) {}
     public record SolicitudReserva(@NotNull @Positive Long orderId, @Positive long revision,
