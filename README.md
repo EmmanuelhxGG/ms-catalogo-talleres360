@@ -15,6 +15,12 @@ de ejemplo con SKU `DEMO-*`, precios y existencias editables. Son datos de
 demostración persistidos, no un inventario real suministrado por el negocio.
 La carga es explícita e idempotente: repetirla no repone stock ni modifica registros.
 
+La interfaz utiliza el **ID numérico automático** del producto como identificador.
+`sku` es opcional al crear o editar: si se omite al crear, el servicio genera una
+referencia interna única; al editar conserva la existente. No se renumeran los
+productos anteriores ni se reinician sus precios o existencias. El formulario
+de administración no solicita ni muestra referencias `DEMO-*`.
+
 BFF ofrece lectura de productos/categorías a Cliente, Operador y Admin; Órdenes consulta precio/stock y envía asignaciones de repuestos. El navegador no llama a este servicio directamente. Catálogo es dueño del precio y del stock libre del único taller. No administra regiones, sucursales, pagos o cuentas de Entra.
 
 Todas las rutas requieren `X-Internal-Key` coincidente con la configuración del servidor. El BFF permite catálogo de venta a Cliente/Operador/Admin; inventario completo y escrituras solo a Admin.

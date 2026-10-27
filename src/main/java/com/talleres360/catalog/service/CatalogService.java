@@ -28,7 +28,7 @@ public class CatalogService {
     private final com.talleres360.catalog.repository.CategoriaRepository categorias;
 
     public record ProductInput(
-            @NotBlank @Size(max = 60) String sku,
+            @Size(max = 60) String sku,
             @NotBlank @Size(max = 160) String name,
             @NotNull @DecimalMin("0.0") BigDecimal price,
             @Min(0) int stock,
@@ -120,7 +120,7 @@ public class CatalogService {
 
     @Transactional
     public ProductView create(ProductInput input) {
-        if (products.existsBySkuIgnoreCase(input.sku().trim()))
+        if (input.sku() != null && !input.sku().isBlank() && products.existsBySkuIgnoreCase(input.sku().trim()))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "El SKU ya existe");
         Product p = new Product();
         apply(p, input);
@@ -130,7 +130,7 @@ public class CatalogService {
     public ProductView update(Long id, ProductInput input) {
         Product p = products.findWithLockById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Producto no encontrado"));
-        products.findBySkuIgnoreCase(input.sku().trim()).ifPresent(existing -> {
+        if (input.sku() != null && !input.sku().isBlank()) products.findBySkuIgnoreCase(input.sku().trim()).ifPresent(existing -> {
             if (!existing.getId().equals(id))
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "El SKU ya existe");
         });
@@ -159,7 +159,11 @@ public class CatalogService {
         return products.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Producto no encontrado"));
     }
     private void apply(Product p, ProductInput input) {
-        p.setSku(input.sku().trim().toUpperCase());
+        // Compatibilidad con integraciones anteriores; el ID visible lo asigna la base de datos.
+        if (input.sku() != null && !input.sku().isBlank())
+            p.setSku(input.sku().trim().toUpperCase(java.util.Locale.ROOT));
+        else if (p.getSku() == null)
+            p.setSku("REP-" + java.util.UUID.randomUUID());
         p.setName(input.name().trim());
         p.setPrice(input.price());
         p.setStock(input.stock());
