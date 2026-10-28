@@ -42,11 +42,13 @@ public class CatalogService {
         }
     }
     public record StockItem(@NotNull @Positive Long productId, @NotNull @Positive @Max(1000000) Integer quantity) {}
-    /** Vista de venta: no expone existencias exactas ni metadatos internos de inventario. */
+    /** Vista de venta con límite de compra; no expone el contrato administrativo de stock. */
     public record CatalogoView(Long id, String sku, String name, BigDecimal price,
-                              boolean active, boolean available, Long categoriaId, String categoriaNombre) {
+                              boolean active, boolean available, Long categoriaId, String categoriaNombre,
+                              int maximoSolicitable) {
         public static CatalogoView from(ProductView p) {
-            return new CatalogoView(p.id(), p.sku(), p.name(), p.price(), p.active(), p.available(), p.categoriaId(), p.categoriaNombre());
+            int maximo = p.available() ? Math.min(1000, Math.max(0, p.stock())) : 0;
+            return new CatalogoView(p.id(), p.sku(), p.name(), p.price(), p.active(), p.available(), p.categoriaId(), p.categoriaNombre(), maximo);
         }
     }
 

@@ -1,5 +1,15 @@
 # Microservicio de Catálogo de Talleres360
 
+## Límite solicitable para el carrito
+
+`GET /api/catalogo` incluye `maximoSolicitable`: el mínimo entre el stock libre y
+1000 (límite del contrato de compras), o cero si no está disponible. React usa este
+valor para impedir que el carrito supere la disponibilidad consultada. Es un
+límite de compra visible para compradores; el contrato administrativo completo y
+el campo `stock` permanecen exclusivos de Admin. No reserva unidades: Órdenes y
+Catálogo vuelven a verificar al crear y aceptar la solicitud.
+
+
 ## Actualización: habilitar/deshabilitar (28-10-2026)
 
 `PUT /api/products/{id}/estado` recibe `{"active":true}` o `{"active":false}`.
