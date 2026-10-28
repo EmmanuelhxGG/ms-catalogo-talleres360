@@ -33,11 +33,12 @@ public class CatalogService {
             @NotNull @DecimalMin("0.0") BigDecimal price,
             @Min(0) int stock,
             boolean active, @Positive Long categoriaId) {}
-    public record ProductView(Long id, String sku, String name, BigDecimal price, int stock, boolean active, boolean available, Long categoriaId, String categoriaNombre) {
+    public record EstadoProducto(@NotNull Boolean active) {}
+    public record ProductView(Long id, String sku, String name, BigDecimal price, int stock, boolean active, boolean available, Long categoriaId, String categoriaNombre, boolean categoriaActiva) {
         public static ProductView from(Product p) {
             boolean activa = p.isActive() && (p.getCategoria() == null || p.getCategoria().isActiva());
-            return new ProductView(p.getId(), p.getSku(), p.getName(), p.getPrice(), p.getStock(), activa, activa && p.getStock() > 0,
-                p.getCategoria() == null ? null : p.getCategoria().getId(), p.getCategoria() == null ? "General" : p.getCategoria().getNombre());
+            return new ProductView(p.getId(), p.getSku(), p.getName(), p.getPrice(), p.getStock(), p.isActive(), activa && p.getStock() > 0,
+                p.getCategoria() == null ? null : p.getCategoria().getId(), p.getCategoria() == null ? "General" : p.getCategoria().getNombre(), p.getCategoria() == null || p.getCategoria().isActiva());
         }
     }
     public record StockItem(@NotNull @Positive Long productId, @NotNull @Positive @Max(1000000) Integer quantity) {}
@@ -51,7 +52,7 @@ public class CatalogService {
 
     @Transactional(readOnly = true)
     public List<CatalogoView> catalogo() {
-        return list().stream().filter(ProductView::active).map(CatalogoView::from).toList();
+        return list().stream().filter(p -> p.active() && p.categoriaActiva()).map(CatalogoView::from).toList();
     }
 
     /** Carga explícita, idempotente por SKU. Nunca repone ni sobrescribe productos existentes. */
@@ -138,6 +139,15 @@ public class CatalogService {
         return ProductView.from(products.save(p));
     }
     @Transactional public void eliminar(Long id) { find(id).setActive(false); }
+    @Transactional
+    public ProductView cambiarEstado(Long id, EstadoProducto input) {
+        Product p = products.findWithLockById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Producto no encontrado"));
+        if (Boolean.TRUE.equals(input.active()) && p.getCategoria() != null && !p.getCategoria().isActiva())
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Habilita primero la categoría del producto");
+        p.setActive(input.active());
+        return ProductView.from(p);
+    }
     @Transactional
     public void consume(ConsumptionRequest request) {
         if (consumptions.existsById(request.eventId())) return;

@@ -1,5 +1,17 @@
 # Microservicio de Catálogo de Talleres360
 
+## Actualización: habilitar/deshabilitar (28-10-2026)
+
+`PUT /api/products/{id}/estado` recibe `{"active":true}` o `{"active":false}`.
+Exige clave interna y rol Admin. Usa bloqueo de escritura y cambia únicamente la
+actividad: conserva stock y precio, incluso si la tabla del navegador era antigua.
+No permite habilitar un producto mientras su categoría esté deshabilitada.
+
+La vista administrativa separa `active` propio del producto y `categoriaActiva`.
+`available` requiere ambos habilitados y stock positivo. El catálogo de venta
+excluye categorías/productos deshabilitados y sigue sin publicar stock numérico.
+
+
 Servicio independiente de productos, categorías, precios y existencias de un único taller: Talleres360. Java 17, Spring Boot 3.5.6, JPA, validación y Lombok. Puerto **8082**; PostgreSQL **catalog_db** en Compose y H2 en desarrollo. Rama **`backend-emmanuel`**. [Repositorio](https://github.com/EmmanuelhxGG/ms-catalogo-talleres360). Documentación actualizada el **22 de octubre de 2026**.
 
 ## Responsabilidad

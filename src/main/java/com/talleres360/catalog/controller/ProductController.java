@@ -56,6 +56,12 @@ public class ProductController {
         @RequestHeader(value = "X-Actor-Role", required = false) String role, @PathVariable Long id, @Valid @RequestBody ProductInput input) {
         admin(key, role); return service.update(id, input);
     }
+    @PutMapping("/api/products/{id}/estado")
+    public ProductView estado(@RequestHeader(value="X-Internal-Key", required=false) String key,
+        @RequestHeader(value="X-Actor-Role", required=false) String role,
+        @PathVariable Long id, @Valid @RequestBody EstadoProducto input) {
+        admin(key, role); return service.cambiarEstado(id, input);
+    }
     @DeleteMapping("/api/products/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
     public void eliminar(@RequestHeader(value="X-Internal-Key", required=false) String key,
         @RequestHeader(value = "X-Actor-Role", required = false) String role, @PathVariable Long id) {
