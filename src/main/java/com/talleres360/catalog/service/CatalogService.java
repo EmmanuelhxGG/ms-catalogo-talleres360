@@ -107,7 +107,7 @@ public class CatalogService {
             int diferencia = deseadas.getOrDefault(id, 0) - reserva.getCantidades().getOrDefault(id, 0);
             var vista = ProductView.from(p);
             if (diferencia > 0 && (!vista.active() || !vista.categoriaActiva() || p.getStock() < diferencia))
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "Stock insuficiente: " + p.getName());
+                throw new StockInsuficienteException(p.getId(), p.getName());
             p.setStock(Math.subtractExact(p.getStock(), diferencia));
         }
         reserva.getCantidades().clear();

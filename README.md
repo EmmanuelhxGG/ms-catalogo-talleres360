@@ -1,5 +1,14 @@
 # Microservicio de Catálogo de Talleres360
 
+## Reservas concurrentes
+
+La reserva bloquea los productos y actualiza el stock en una transacción.
+Si dos solicitudes compiten por las mismas unidades, solo se confirma la que
+dispone de stock. La otra devuelve HTTP 409 con
+`codigo=RESERVA_SIN_DISPONIBILIDAD`, `productoId` y `nombreProducto`.
+La transacción rechazada no descuenta unidades ni confirma su reserva.
+Órdenes usa este contrato para avisar al operador sin aceptar la solicitud.
+
 ## Límite solicitable para el carrito
 
 `GET /api/catalogo` incluye `maximoSolicitable`: el mínimo entre el stock libre y
