@@ -103,7 +103,8 @@ public class CatalogService {
             Product p = products.findWithLockById(id)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Producto no encontrado"));
             int diferencia = deseadas.getOrDefault(id, 0) - reserva.getCantidades().getOrDefault(id, 0);
-            if (diferencia > 0 && (!ProductView.from(p).active() || p.getStock() < diferencia))
+            var vista = ProductView.from(p);
+            if (diferencia > 0 && (!vista.active() || !vista.categoriaActiva() || p.getStock() < diferencia))
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Stock insuficiente: " + p.getName());
             p.setStock(Math.subtractExact(p.getStock(), diferencia));
         }
