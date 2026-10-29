@@ -5,9 +5,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-@Entity @Table(name = "stock_consumptions")
+@Entity @Table(name = "consumos_existencias")
 @Getter @Setter @NoArgsConstructor
 public class StockConsumption {
-    @Id private String eventId;
-    @Column(nullable = false) private Long orderId;
+    @Id @Column(name = "evento_id") private String eventId;
+    @Column(name = "solicitud_id", nullable = false) private Long orderId;
 }

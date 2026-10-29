@@ -8,13 +8,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 /** Última asignación aplicada a una orden. Conservar incluso al cancelar evita reintentos antiguos. */
-@Entity @Table(name = "reservas_stock")
+@Entity @Table(name = "reservas_existencias")
 @Getter @Setter @NoArgsConstructor
 public class ReservaStock {
-    @Id private Long ordenId;
-    private long revision;
+    @Id @Column(name = "solicitud_id") private Long ordenId;
+    @Column(name = "revision") private long revision;
     @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "reserva_stock_items", joinColumns = @JoinColumn(name = "orden_id"))
+    @CollectionTable(name = "detalle_reservas", joinColumns = @JoinColumn(name = "solicitud_id"))
     @MapKeyColumn(name = "producto_id") @Column(name = "cantidad", nullable = false)
     private Map<Long, Integer> cantidades = new HashMap<>();
 }
